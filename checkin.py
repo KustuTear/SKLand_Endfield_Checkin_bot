@@ -41,11 +41,10 @@ def get_token(cred):
 
 def generate_sign(path, token, timestamp):
     """生成森空岛 API 专属签名"""
-    platform = "3"  # 代表网页版
+    platform = "3"  
     vName = "1.0.0"
     dId = ""
     
-    # 构造 Header 信息结构
     header_json = json.dumps({
         "platform": platform,
         "timestamp": timestamp,
@@ -53,14 +52,9 @@ def generate_sign(path, token, timestamp):
         "vName": vName
     }, separators=(',', ':'))
     
-    # 拼接需要签名的数据 (路径 + 请求体 + 时间戳 + 头部信息)
-    # 因为终末地签到是空请求体，所以第二项为空字符串 ""
+    # 请求体为空，所以第二项为 ""
     data_to_sign = path + "" + timestamp + header_json
-    
-    # 进行 HMAC-SHA256 加密
     hmac_bytes = hmac.new(token.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).digest()
-    
-    # 将结果转为 hex 字符串后进行 MD5 加密
     sign = hashlib.md5(hmac_bytes.hex().encode('utf-8')).hexdigest()
     
     return sign, platform, vName, dId
@@ -79,10 +73,9 @@ def do_checkin():
         timestamp = str(int(time.time()))
         path = "/web/v1/game/endfield/attendance"
         
-        # 计算签名
         sign, platform, vName, dId = generate_sign(path, token, timestamp)
         
-        # 构造带签名的请求头
+        # 构造带签名的请求头，加入了关键的 sk-game-role
         headers = {
             "cred": SKLAND_CRED,
             "sign": sign,
@@ -90,6 +83,7 @@ def do_checkin():
             "platform": platform,
             "vName": vName,
             "dId": dId,
+            "sk-game-role": "3_1695947264_1",  # <-- 绑定了你的终末地游戏角色
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json",
             "Content-Type": "application/json;charset=utf-8"
@@ -98,13 +92,22 @@ def do_checkin():
         print("发送签到请求...")
         response = requests.post(CHECKIN_URL, headers=headers)
         data = response.json()
+        print("服务器返回详情:", data)
         
         # 解析响应结果
         if data.get("code") == 0:
             awards = data.get("data", {}).get("awards", [])
-            award_info = "\n".join([f"- 奖励 ID: `{item.get('resource', {}).get('id', '未知')}` x {item.get('count', 1)}" for item in awards])
-            msg = f"✅ **终末地签到成功**\n\n**获得奖励：**\n{award_info}"
-        elif data.get("code") == 10001:
+            # 兼容不同接口返回的奖励格式 (部分返回在 awardIds 里)
+            if not awards and "awardIds" in data.get("data", {}):
+                awards = data["data"]["awardIds"]
+            
+            # 如果能解析出奖励详情更好，否则只提示成功
+            if awards:
+                award_info = "\n".join([f"- 奖励 ID: `{item.get('resource', {}).get('id', item.get('id', '未知'))}` x {item.get('count', 1)}" for item in awards])
+                msg = f"✅ **终末地签到成功**\n\n**获得奖励：**\n{award_info}"
+            else:
+                msg = "✅ **终末地签到成功！**\n（奖励已发放至游戏内）"
+        elif data.get("code") == 10001 and "已经" in data.get("message", ""):
             msg = "⚠️ **终末地签到提示**\n今日已经签到过了哦。"
         else:
             msg = f"❌ **终末地签到失败**\n错误码：`{data.get('code')}`\n错误信息：{data.get('message', '无')}"
