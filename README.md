@@ -1,6 +1,6 @@
 # SKLand_Endfield_Checkin_bot
 
-基于 GitHub Actions 运行的《明日方舟：终末地》全自动每日签到脚本，支持通过 Telegram 机器人推送签到结果通知。
+基于 GitHub Actions 运行的森空岛《明日方舟：终末地》全自动每日签到脚本，支持通过 Telegram 机器人推送签到结果通知。
 
 ## 🚀 使用方法
 
