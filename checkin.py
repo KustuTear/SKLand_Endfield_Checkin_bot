@@ -7,6 +7,7 @@ import hashlib
 
 # ================= 配置区域 =================
 SKLAND_CRED = os.environ.get("SKLAND_CRED")
+ENDFIELD_UID = os.environ.get("ENDFIELD_UID")  # 已修改为 ENDFIELD_UID
 TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN")
 TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
 
@@ -52,7 +53,6 @@ def generate_sign(path, token, timestamp):
         "vName": vName
     }, separators=(',', ':'))
     
-    # 请求体为空，所以第二项为 ""
     data_to_sign = path + "" + timestamp + header_json
     hmac_bytes = hmac.new(token.encode('utf-8'), data_to_sign.encode('utf-8'), hashlib.sha256).digest()
     sign = hashlib.md5(hmac_bytes.hex().encode('utf-8')).hexdigest()
@@ -61,8 +61,8 @@ def generate_sign(path, token, timestamp):
 
 def do_checkin():
     """执行签到逻辑"""
-    if not SKLAND_CRED:
-        msg = "❌ **签到失败**\n未找到 `SKLAND_CRED` 环境变量，请检查 GitHub Secrets 配置。"
+    if not SKLAND_CRED or not ENDFIELD_UID:
+        msg = "❌ **签到失败**\n未找到 `SKLAND_CRED` 或 `ENDFIELD_UID` 环境变量，请检查 GitHub Secrets 配置。"
         print(msg)
         send_telegram_message(msg)
         return
@@ -75,7 +75,7 @@ def do_checkin():
         
         sign, platform, vName, dId = generate_sign(path, token, timestamp)
         
-        # 构造带签名的请求头，加入了关键的 sk-game-role
+        # 构造带签名的请求头，使用新的 ENDFIELD_UID 变量
         headers = {
             "cred": SKLAND_CRED,
             "sign": sign,
@@ -83,8 +83,8 @@ def do_checkin():
             "platform": platform,
             "vName": vName,
             "dId": dId,
-            "sk-game-role": "3_1695947264_1",  # <-- 绑定了你的终末地游戏角色
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "sk-game-role": f"3_{ENDFIELD_UID}_1", 
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json",
             "Content-Type": "application/json;charset=utf-8"
         }
