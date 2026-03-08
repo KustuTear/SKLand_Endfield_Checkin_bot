@@ -26,6 +26,7 @@ jobs:
       - name: 运行签到脚本
         env:
           SKLAND_CRED: ${{ secrets.SKLAND_CRED }}
+          ENDFIELD_UID: ${{ secrets.ENDFIELD_UID }} # <-- 已经修改为 ENDFIELD_UID
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
