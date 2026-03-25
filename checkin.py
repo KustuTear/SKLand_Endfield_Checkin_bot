@@ -13,6 +13,18 @@ TG_CHAT_ID = os.environ.get("TG_CHAT_ID")
 
 CHECKIN_URL = "https://zonai.skland.com/web/v1/game/endfield/attendance"
 REFRESH_URL = "https://zonai.skland.com/api/v1/auth/refresh"
+
+# 🎒 奖励翻译字典：已更新为最新的真实名称数据
+REWARD_DICT = {
+    "1": "中级作战记录",
+    "2": "初级认知载体",
+    "3": "高级作战记录",
+    "4": "武器检查装置",
+    "5": "武器检查套组",
+    "6": "协议棱柱",
+    "7": "折金券",
+    "8": "嵌晶玉"
+}
 # ============================================
 
 def send_telegram_message(message):
@@ -75,7 +87,6 @@ def do_checkin():
         
         sign, platform, vName, dId = generate_sign(path, token, timestamp)
         
-        # 构造带签名的请求头
         headers = {
             "cred": SKLAND_CRED,
             "sign": sign,
@@ -94,14 +105,31 @@ def do_checkin():
         data = response.json()
         print("服务器返回详情:", data)
         
-        # 解析响应结果
         if data.get("code") == 0:
             awards = data.get("data", {}).get("awards", [])
             if not awards and "awardIds" in data.get("data", {}):
                 awards = data["data"]["awardIds"]
             
             if awards:
-                award_info = "\n".join([f"- 奖励 ID: `{item.get('resource', {}).get('id', item.get('id', '未知'))}` x {item.get('count', 1)}" for item in awards])
+                award_lines = []
+                for item in awards:
+                    # 获取原始 ID，例如 endfield_attendance_2_5
+                    raw_id = item.get('resource', {}).get('id', item.get('id', '未知'))
+                    item_name = raw_id
+                    item_count = item.get('count', 1)
+                    
+                    # 尝试解析 endfield_attendance_物品ID_数量 格式
+                    if raw_id.startswith("endfield_attendance_"):
+                        parts = raw_id.split("_")
+                        if len(parts) >= 4:
+                            item_id = parts[2]       # 提取出物品 ID 
+                            item_count = parts[3]    # 提取出真实数量 
+                            # 从字典里查中文名，查不到就显示“未知物品(ID)”
+                            item_name = REWARD_DICT.get(item_id, f"未知物品({item_id})")
+                            
+                    award_lines.append(f"- {item_name} x {item_count}")
+                
+                award_info = "\n".join(award_lines)
                 msg = f"✅ **终末地签到成功**\n\n**获得奖励：**\n{award_info}"
             else:
                 msg = "✅ **终末地签到成功！**\n（奖励已发放至游戏内）"
