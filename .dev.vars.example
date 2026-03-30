@@ -1,0 +1,8 @@
+TG_BOT_TOKEN="<YOUR_TELEGRAM_BOT_TOKEN>"
+ENCRYPTION_KEY="<LONG_RANDOM_SECRET>"
+CRON_SECRET="<RANDOM_HTTP_TRIGGER_SECRET>"
+SKLAND_SEND_CODE_ENDPOINT="https://as.hypergryph.com/user/auth/v1/send_phone_code"
+SKLAND_TOKEN_BY_PHONE_CODE_ENDPOINT="https://as.hypergryph.com/user/auth/v1/token_by_phone_code"
+SKLAND_GENERATE_CRED_ENDPOINT="https://zonai.skland.com/api/v1/user/auth/generate_cred_by_code"
+SKLAND_ATTENDANCE_ENDPOINT="https://zonai.skland.com/api/v1/game/attendance"
+SKLAND_GAME_ID="endfield"
