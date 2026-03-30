@@ -4,5 +4,5 @@ pages_build_output_dir = "./public"
 
 [[kv_namespaces]]
 binding = "SKLAND_STORAGE"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
-preview_id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "945dd22ac4aa45c69065c44bb09e5411"
+preview_id = "945dd22ac4aa45c69065c44bb09e5411"
