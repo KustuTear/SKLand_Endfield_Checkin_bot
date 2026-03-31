@@ -1,5 +1,5 @@
-import { encryptJson } from "../src/crypto.js";
-import { validateSklandToken } from "../src/skland_api.js";
+import { encryptJson, decryptJson } from "../src/crypto.js";
+import { validateSklandToken, performAttendance } from "../src/skland_api.js";
 
 function parseBindCommand(text) {
   const match = text.match(/^\/bind(?:@\w+)?\s+(.+)$/i);
@@ -8,6 +8,10 @@ function parseBindCommand(text) {
 
 function parseStartOrHelpCommand(text) {
   return /^\/(start|help)(?:@\w+)?$/i.test(text);
+}
+
+function parseTestCommand(text) {
+  return /^\/test(?:@\w+)?$/i.test(text);
 }
 
 async function tgApi(env, method, payload) {
@@ -51,13 +55,22 @@ async function saveUserSecret(env, tgUserId, data) {
   await env.SKLAND_STORAGE.put(`user:${tgUserId}`, encrypted);
 }
 
+async function readUserSecret(env, tgUserId) {
+  const encrypted = await env.SKLAND_STORAGE.get(`user:${tgUserId}`);
+  if (!encrypted) {
+    return null;
+  }
+  return decryptJson(encrypted, env.ENCRYPTION_KEY);
+}
+
 function buildBindGuide() {
   return [
     "绑定方式：",
     "1) 登录 https://www.skland.com/",
     "2) 打开 https://web-api.skland.com/account/info/hg",
     "3) 复制返回 JSON 中 content 字段完整字符串",
-    "4) 在这里发送：/bind <你的content字符串>"
+    "4) 在这里发送：/bind <你的content字符串>",
+    "5) 绑定后可发送 /test 立即测试签到"
   ].join("\n");
 }
 
@@ -84,9 +97,27 @@ async function handleBind(message, env) {
     });
 
     await deleteMessage(env, chatId, message.message_id);
-    await sendMessage(env, chatId, "绑定成功，Token 已加密保存。后续将自动签到。\n如需更新，请再次发送 /bind <token>");
+    await sendMessage(env, chatId, "绑定成功，Token 已加密保存。后续将自动签到。\n可发送 /test 立即测试。\n如需更新，请再次发送 /bind <token>");
   } catch (error) {
     await sendMessage(env, chatId, `绑定失败：${error.message || "Token 无效或服务暂不可用"}`);
+  }
+}
+
+async function handleTest(message, env) {
+  const tgUserId = message.from?.id;
+  const chatId = message.chat?.id;
+
+  try {
+    const user = await readUserSecret(env, tgUserId);
+    if (!user?.cred) {
+      await sendMessage(env, chatId, "你还没有绑定，请先发送 /bind <token>");
+      return;
+    }
+
+    await performAttendance(user, env);
+    await sendMessage(env, chatId, "手动签到执行成功。若今日已签到，系统会返回对应提示。");
+  } catch (error) {
+    await sendMessage(env, chatId, `手动签到失败：${error.message || "服务暂不可用"}`);
   }
 }
 
@@ -118,6 +149,11 @@ export async function onRequestPost(context) {
 
   if (text.startsWith("/bind")) {
     await handleBind({ ...message, text }, env);
+    return new Response("ok", { status: 200 });
+  }
+
+  if (parseTestCommand(text)) {
+    await handleTest({ ...message, text }, env);
     return new Response("ok", { status: 200 });
   }
 

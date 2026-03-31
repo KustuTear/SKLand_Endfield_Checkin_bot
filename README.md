@@ -34,7 +34,7 @@
 
 本仓库新增了基于 Cloudflare 的 JS 版本实现：
 
-- `functions/webhook.js`：Telegram Webhook 入口，处理 `/bind <森空岛token>` 绑定。
+- `functions/webhook.js`：Telegram Webhook 入口，处理 `/bind <森空岛token>` 绑定与 `/test` 手动签到。
 - `src/crypto.js`：使用 Web Crypto API（AES-GCM）加解密用户凭据。
 - `src/skland_api.js`：封装森空岛/鹰角接口调用。
 - `src/cron.js`：定时签到逻辑（遍历 `user:*`，解密后签到，失败通知用户）。
@@ -105,5 +105,6 @@ Pages 主要负责 webhook；Cron 建议使用独立 Worker（`worker-cron.js`�
 ```bash
 curl -X POST "https://<your-pages-domain>/cron" -H "x-cron-secret: <CRON_SECRET>"
 ```
+
 
 
