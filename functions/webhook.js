@@ -3,7 +3,21 @@ import { validateSklandToken, performAttendance, extractAttendanceRewards, forma
 
 function parseBindCommand(text) {
   const match = text.match(/^\/bind(?:@\w+)?\s+(.+)$/i);
-  return match ? match[1].trim() : null;
+  if (!match) {
+    return null;
+  }
+
+  const input = match[1].trim();
+  const parts = input.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+
+  const token = parts[0];
+  const uidRaw = parts[1] || null;
+  const uid = uidRaw && /^\d+$/.test(uidRaw) ? uidRaw : null;
+
+  return { token, uid };
 }
 
 function parseStartOrHelpCommand(text) {
@@ -69,8 +83,9 @@ function buildBindGuide() {
     "1) 登录 https://www.skland.com/",
     "2) 打开 https://web-api.skland.com/account/info/hg",
     "3) 复制返回 JSON 中 content 字段完整字符串",
-    "4) 在这里发送：/bind <你的content字符串>",
-    "5) 绑定后可发送 /test 立即测试签到",
+    "4) 在这里发送：/bind <token> [uid]",
+    "5) 若 /test 提示用户未登录，请补充 uid 重新绑定",
+    "6) 绑定后可发送 /test 立即测试签到",
     "默认每日北京时间 0:00 自动签到一次（需启用 Cron）"
   ].join("\n");
 }
@@ -78,27 +93,34 @@ function buildBindGuide() {
 async function handleBind(message, env) {
   const tgUserId = message.from?.id;
   const chatId = message.chat?.id;
-  const bindToken = parseBindCommand(message.text || "");
+  const bindInput = parseBindCommand(message.text || "");
 
-  if (!bindToken) {
-    await sendMessage(env, chatId, "格式错误，请使用：/bind <森空岛token>");
+  if (!bindInput?.token) {
+    await sendMessage(env, chatId, "格式错误，请使用：/bind <token> [uid]");
     return;
   }
 
   try {
-    const profile = await validateSklandToken(bindToken, env);
+    const profile = await validateSklandToken(bindInput.token, env);
+    const finalUid = bindInput.uid || profile.uid || null;
 
     await saveUserSecret(env, tgUserId, {
       phone: null,
-      cred: bindToken,
-      uid: profile.uid,
+      cred: bindInput.token,
+      uid: finalUid,
       token: profile.token,
       tg_user_id: tgUserId,
       updated_at: new Date().toISOString()
     });
 
     await deleteMessage(env, chatId, message.message_id);
-    await sendMessage(env, chatId, "绑定成功，Token 已加密保存。\n默认每日北京时间 0:00 自动签到一次（需启用 Cron）。\n可发送 /test 立即测试。\n如需更新，请再次发送 /bind <token>");
+
+    if (!finalUid) {
+      await sendMessage(env, chatId, "绑定成功，但未识别到 uid。若 /test 失败，请使用 /bind <token> <uid> 重新绑定。\n默认每日北京时间 0:00 自动签到一次（需启用 Cron）。");
+      return;
+    }
+
+    await sendMessage(env, chatId, "绑定成功，Token 已加密保存。\n默认每日北京时间 0:00 自动签到一次（需启用 Cron）。\n可发送 /test 立即测试。\n如需更新，请再次发送 /bind <token> [uid]");
   } catch (error) {
     await sendMessage(env, chatId, `绑定失败：${error.message || "Token 无效或服务暂不可用"}`);
   }
@@ -111,7 +133,12 @@ async function handleTest(message, env) {
   try {
     const user = await readUserSecret(env, tgUserId);
     if (!user?.cred) {
-      await sendMessage(env, chatId, "你还没有绑定，请先发送 /bind <token>");
+      await sendMessage(env, chatId, "你还没有绑定，请先发送 /bind <token> [uid]");
+      return;
+    }
+
+    if (!user.uid) {
+      await sendMessage(env, chatId, "缺少 uid，请发送 /bind <token> <uid> 重新绑定后再试。\nuid 可填你游戏内数字 UID。 ");
       return;
     }
 
@@ -162,6 +189,3 @@ export async function onRequestPost(context) {
 
   return new Response("ok", { status: 200 });
 }
-
-
-
