@@ -4,6 +4,17 @@ const DEFAULT_GENERATE_CRED_ENDPOINT = "https://zonai.skland.com/api/v1/user/aut
 const DEFAULT_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/api/v1/game/attendance";
 const DEFAULT_REFRESH_ENDPOINT = "https://zonai.skland.com/api/v1/auth/refresh";
 
+const REWARD_NAME_MAP = {
+  endfield_attendance_1: "中级作战记录",
+  endfield_attendance_2: "初级认知载体",
+  endfield_attendance_3: "高级作战记录",
+  endfield_attendance_4: "武器检查装置",
+  endfield_attendance_5: "武器检查套组",
+  endfield_attendance_6: "协议棱柱",
+  endfield_attendance_7: "折金券",
+  endfield_attendance_8: "嵌晶玉"
+};
+
 function randomDid() {
   if (typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -103,6 +114,57 @@ function pickCredPayload(body) {
     token: data?.token || data?.access_token || null,
     uid: data?.uid || data?.game_uid || data?.user_uid || null
   };
+}
+
+function parseRewardKey(rawId) {
+  if (!rawId || typeof rawId !== "string") {
+    return { key: "", countFromId: null };
+  }
+  const match = rawId.match(/^(endfield_attendance_\d+)(?:_(\d+))?$/);
+  if (!match) {
+    return { key: rawId, countFromId: null };
+  }
+  return {
+    key: match[1],
+    countFromId: match[2] ? Number(match[2]) : null
+  };
+}
+
+function normalizeReward(rawId, fallbackCount) {
+  const { key, countFromId } = parseRewardKey(rawId);
+  return {
+    id: key || rawId || "unknown_reward",
+    name: REWARD_NAME_MAP[key] || key || rawId || "未知奖励",
+    count: countFromId || Number(fallbackCount) || 1
+  };
+}
+
+export function extractAttendanceRewards(body) {
+  const data = body?.data || {};
+  const rewards = [];
+
+  if (Array.isArray(data.awards)) {
+    for (const item of data.awards) {
+      const rawId = item?.resource?.id || item?.id || "";
+      const count = item?.count || item?.resource?.count;
+      rewards.push(normalizeReward(rawId, count));
+    }
+  }
+
+  if (rewards.length === 0 && Array.isArray(data.awardIds)) {
+    for (const rawId of data.awardIds) {
+      rewards.push(normalizeReward(rawId, null));
+    }
+  }
+
+  return rewards;
+}
+
+export function formatRewardLines(rewards) {
+  if (!Array.isArray(rewards) || rewards.length === 0) {
+    return "（未返回奖励明细）";
+  }
+  return rewards.map((reward) => `- ${reward.name} x ${reward.count}`).join("\n");
 }
 
 export async function sendSmsCode(phone, env) {

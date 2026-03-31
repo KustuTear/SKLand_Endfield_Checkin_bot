@@ -1,5 +1,5 @@
 import { encryptJson, decryptJson } from "../src/crypto.js";
-import { validateSklandToken, performAttendance } from "../src/skland_api.js";
+import { validateSklandToken, performAttendance, extractAttendanceRewards, formatRewardLines } from "../src/skland_api.js";
 
 function parseBindCommand(text) {
   const match = text.match(/^\/bind(?:@\w+)?\s+(.+)$/i);
@@ -115,8 +115,10 @@ async function handleTest(message, env) {
       return;
     }
 
-    await performAttendance(user, env);
-    await sendMessage(env, chatId, "手动签到执行成功。若今日已签到，系统会返回对应提示。");
+    const result = await performAttendance(user, env);
+    const rewards = extractAttendanceRewards(result);
+    const rewardLines = formatRewardLines(rewards);
+    await sendMessage(env, chatId, `手动签到成功，获得奖励：\n${rewardLines}`);
   } catch (error) {
     await sendMessage(env, chatId, `手动签到失败：${error.message || "服务暂不可用"}`);
   }
@@ -160,4 +162,6 @@ export async function onRequestPost(context) {
 
   return new Response("ok", { status: 200 });
 }
+
+
 

@@ -1,5 +1,10 @@
 import { decryptJson } from "./crypto.js";
-import { performAttendance, isAuthFailure } from "./skland_api.js";
+import {
+  performAttendance,
+  isAuthFailure,
+  extractAttendanceRewards,
+  formatRewardLines
+} from "./skland_api.js";
 
 async function tgApi(env, method, payload) {
   const response = await fetch(`https://api.telegram.org/bot${env.TG_BOT_TOKEN}/${method}`, {
@@ -57,9 +62,11 @@ export async function runDailyCheckin(env) {
       }
 
       const user = await decryptJson(encrypted, env.ENCRYPTION_KEY);
-      await performAttendance(user, env);
+      const result = await performAttendance(user, env);
+      const rewards = extractAttendanceRewards(result);
+      const rewardLines = formatRewardLines(rewards);
       success += 1;
-      await notifyUser(env, tgUserId, "自动签到成功：今日签到已完成。");
+      await notifyUser(env, tgUserId, `自动签到成功，获得奖励：\n${rewardLines}`);
     } catch (error) {
       failed += 1;
       const msg = isAuthFailure(error)
@@ -80,5 +87,3 @@ export async function scheduled(_event, env, _ctx) {
 
   await runDailyCheckin(env);
 }
-
-
