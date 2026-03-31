@@ -34,7 +34,7 @@
 
 本仓库新增了基于 Cloudflare 的 JS 版本实现：
 
-- `functions/webhook.js`：Telegram Webhook 入口，处理 `/login <手机号>` 与 6 位验证码。
+- `functions/webhook.js`：Telegram Webhook 入口，处理 `/bind <森空岛token>` 绑定。
 - `src/crypto.js`：使用 Web Crypto API（AES-GCM）加解密用户凭据。
 - `src/skland_api.js`：封装森空岛/鹰角接口调用。
 - `src/cron.js`：定时签到逻辑（遍历 `user:*`，解密后签到，失败通知用户）。
@@ -49,9 +49,7 @@
 
 可选接口覆盖变量：
 
-- `SKLAND_SEND_CODE_ENDPOINT`
-- `SKLAND_TOKEN_BY_PHONE_CODE_ENDPOINT`
-- `SKLAND_GENERATE_CRED_ENDPOINT`
+- `SKLAND_REFRESH_ENDPOINT`
 - `SKLAND_ATTENDANCE_ENDPOINT`
 - `SKLAND_GAME_ID`
 
@@ -88,12 +86,15 @@ id = "<YOUR_KV_NAMESPACE_ID>"
 curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<your-pages-domain>/webhook"
 ```
 
-### 状态与数据键说明
+### 绑定与数据键说明
 
-- 登录状态（5 分钟 TTL）：
-  - `state:{tg_user_id}` -> `{ phone, step: "WAIT_CODE", phone_msg_id, prompt_msg_id, chat_id }`
+- 用户按如下流程获取 token 并绑定：
+  - 登录 https://www.skland.com/
+  - 打开 https://web-api.skland.com/account/info/hg
+  - 复制返回 JSON 的 `content` 字段完整字符串
+  - 在 Bot 私聊发送 `/bind <content字符串>`
 - 用户凭据（加密存储）：
-  - `user:{tg_user_id}` -> AES-GCM 加密后的 JSON（`cred`, `uid`, `token`, `phone`）
+  - `user:{tg_user_id}` -> AES-GCM 加密后的 JSON（`cred`, `uid`, `token`）
 
 ### 定时签到部署建议
 
@@ -104,3 +105,5 @@ Pages 主要负责 webhook；Cron 建议使用独立 Worker（`worker-cron.js`�
 ```bash
 curl -X POST "https://<your-pages-domain>/cron" -H "x-cron-secret: <CRON_SECRET>"
 ```
+
+

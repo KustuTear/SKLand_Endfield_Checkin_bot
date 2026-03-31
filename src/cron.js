@@ -62,7 +62,7 @@ export async function runDailyCheckin(env) {
     } catch (error) {
       failed += 1;
       const msg = isAuthFailure(error)
-        ? "自动签到失败：凭证可能已失效，请重新发送 /login 进行登录。"
+        ? "自动签到失败：凭证可能已失效，请重新发送 /bind 进行绑定。"
         : `自动签到失败：${error.message || "服务暂时不可用"}`;
 
       await notifyUser(env, tgUserId, msg);
@@ -79,3 +79,4 @@ export async function scheduled(_event, env, _ctx) {
 
   await runDailyCheckin(env);
 }
+

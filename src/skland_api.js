@@ -2,6 +2,7 @@ const DEFAULT_SEND_CODE_ENDPOINT = "https://as.hypergryph.com/user/auth/v1/send_
 const DEFAULT_TOKEN_BY_PHONE_CODE_ENDPOINT = "https://as.hypergryph.com/user/auth/v1/token_by_phone_code";
 const DEFAULT_GENERATE_CRED_ENDPOINT = "https://zonai.skland.com/api/v1/user/auth/generate_cred_by_code";
 const DEFAULT_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/api/v1/game/attendance";
+const DEFAULT_REFRESH_ENDPOINT = "https://zonai.skland.com/api/v1/auth/refresh";
 
 function randomDid() {
   if (typeof crypto.randomUUID === "function") {
@@ -51,6 +52,14 @@ function isSuccess(body, response) {
   return response.ok;
 }
 
+async function readJson(response, fallbackError) {
+  try {
+    return await response.json();
+  } catch {
+    throw new Error(fallbackError);
+  }
+}
+
 async function postJson(url, payload, headers, fallbackError) {
   const response = await fetch(url, {
     method: "POST",
@@ -58,12 +67,20 @@ async function postJson(url, payload, headers, fallbackError) {
     body: JSON.stringify(payload)
   });
 
-  let body;
-  try {
-    body = await response.json();
-  } catch {
-    throw new Error(fallbackError);
+  const body = await readJson(response, fallbackError);
+
+  if (!isSuccess(body, response)) {
+    const error = new Error(getErrorMessage(body, fallbackError));
+    error.code = body?.code ?? body?.status ?? response.status;
+    throw error;
   }
+
+  return body;
+}
+
+async function getJson(url, headers, fallbackError) {
+  const response = await fetch(url, { method: "GET", headers });
+  const body = await readJson(response, fallbackError);
 
   if (!isSuccess(body, response)) {
     const error = new Error(getErrorMessage(body, fallbackError));
@@ -142,6 +159,21 @@ export async function generateCredByCode(grantCode, env) {
   return result;
 }
 
+export async function validateSklandToken(cred, env) {
+  const endpoint = env.SKLAND_REFRESH_ENDPOINT || DEFAULT_REFRESH_ENDPOINT;
+  const body = await getJson(
+    endpoint,
+    buildBaseHeaders({ cred }),
+    "Token 校验失败"
+  );
+
+  const data = body?.data || {};
+  return {
+    token: data.token || data.access_token || null,
+    uid: data.uid || data.game_uid || data.user_uid || null
+  };
+}
+
 export async function performAttendance(user, env) {
   const endpoint = env.SKLAND_ATTENDANCE_ENDPOINT || DEFAULT_ATTENDANCE_ENDPOINT;
   const payload = {
@@ -165,4 +197,3 @@ export function isAuthFailure(error) {
   const text = (error?.message || "").toLowerCase();
   return text.includes("cred") || text.includes("token") || text.includes("auth") || error?.code === 401;
 }
-
