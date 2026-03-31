@@ -1,31 +1,43 @@
-# SKLand_Endfield_Checkin_bot
+# SKLand Endfield Checkin Bot
 
-基于 GitHub Actions 运行的森空岛《明日方舟：终末地》全自动每日签到脚本，支持通过 Telegram 机器人推送签到结果通知。
+基于 Cloudflare Workers 的 Telegram webhook 签到机器人。
 
-## 🚀 使用方法
+## 功能
 
-本项目完全依赖 GitHub Actions 自动运行，无需本地服务器部署。使用前，请务必在你的 GitHub 仓库中配置相应的环境变量。
+- `/start` 或 `/help`：显示使用说明
+- `/bind <token1,token2>`：绑定一个或多个森空岛 token，多个 token 使用英文逗号分隔
+- `/test`：仅测试当前 `message.from.id` 对应记录
+- `/clear`：仅清空当前 `message.from.id` 对应记录
+- 每天北京时间 00:00 自动签到一次
+- 使用 `SKLAND_STORAGE` KV 加密保存 token
 
-**配置路径**：
-进入你的 GitHub 仓库 -> 点击顶部 `Settings` -> 左侧菜单找到 `Secrets and variables` -> 选择 `Actions` -> 点击绿色的 `New repository secret` 按钮。
+## 必要配置
 
-## 🔑 环境变量 (Secrets) 配置说明
+### Wrangler
 
-请严格按照以下名称新建 4 个 Secret 变量：
+在 `wrangler.toml` 中填入你自己的 KV namespace id：
 
-* **`ENDFIELD_UID`**
-    * **说明**：你的《明日方舟：终末地》游戏内角色 UID。
-    * **示例**：`123456789`
+- `SKLAND_STORAGE`
 
-* **`SKLAND_CRED`**
-    * **说明**：森空岛的专属身份登录凭证。
-    * **⚠️ 严正注意**：这**不是**鹰角网络通行证 Token！
-    * **获取方式**：需要在手机或电脑端对“森空岛”进行网络抓包，在签到请求的 Request Headers（请求头）中寻找 `cred` 字段的值（通常是一长串字母和数字的组合）。
+### Secrets
 
-* **`TG_BOT_TOKEN`**
-    * **说明**：你的 Telegram 机器人 Token，用于发送通知。
-    * **获取方式**：在 Telegram 中向 `@BotFather` 申请创建机器人后获取。
+执行以下命令写入 Worker secret：
 
-* **`TG_CHAT_ID`**
-    * **说明**：接收签到通知的 Telegram 用户 ID 或群组 ID。
-    * **注意**：这是一串纯数字 ID，**不是**以 `@` 开头的用户名。你可以通过向 `@userinfobot` 发送消息来获取你自己的数字 ID。
+```bash
+wrangler secret put TG_BOT_TOKEN
+wrangler secret put ENCRYPTION_KEY
+```
+
+## 部署后操作
+
+1. 部署 Worker
+2. 将 Telegram webhook 指向 `https://<your-worker-domain>/webhook`
+
+```bash
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<your-worker-domain>/webhook"
+```
+
+## 备注
+
+- `/start` 中的 token 获取说明参考森空岛网页 `https://web-api.skland.com/account/info/hg` 的 `content` 字段。
+- 自动签到 cron `0 16 * * *` 为 UTC 时间，对应北京时间每天 00:00。

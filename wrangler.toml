@@ -1,0 +1,11 @@
+name = "skland-endfield-checkin-bot"
+main = "src/index.js"
+compatibility_date = "2026-03-31"
+
+[[kv_namespaces]]
+binding = "SKLAND_STORAGE"
+id = "fd1dc1ab2a5e4c3082c5e470b9cab55f"
+preview_id = "fd1dc1ab2a5e4c3082c5e470b9cab55f"
+
+[triggers]
+crons = ["0 16 * * *"]

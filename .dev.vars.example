@@ -1,0 +1,13 @@
+TG_BOT_TOKEN=123456:replace_with_your_bot_token
+ENCRYPTION_KEY=replace_with_a_long_random_secret
+
+# Optional: set a fixed device id if you want deterministic local testing.
+# SKLAND_DID=Breplace_with_your_device_id
+
+# Optional endpoint overrides.
+# SKLAND_APP_CODE=4ca99fa6b56cc2ba
+# SKLAND_OAUTH_GRANT_ENDPOINT=https://as.hypergryph.com/user/oauth2/v2/grant
+# SKLAND_GENERATE_CRED_ENDPOINT=https://zonai.skland.com/web/v1/user/auth/generate_cred_by_code
+# SKLAND_BINDING_ENDPOINT=https://zonai.skland.com/api/v1/game/player/binding
+# SKLAND_ARKNIGHTS_ATTENDANCE_ENDPOINT=https://zonai.skland.com/api/v1/game/attendance
+# SKLAND_ENDFIELD_ATTENDANCE_ENDPOINT=https://zonai.skland.com/web/v1/game/endfield/attendance
