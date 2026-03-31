@@ -70,7 +70,8 @@ function buildBindGuide() {
     "2) 打开 https://web-api.skland.com/account/info/hg",
     "3) 复制返回 JSON 中 content 字段完整字符串",
     "4) 在这里发送：/bind <你的content字符串>",
-    "5) 绑定后可发送 /test 立即测试签到"
+    "5) 绑定后可发送 /test 立即测试签到",
+    "默认每日北京时间 0:00 自动签到一次（需启用 Cron）"
   ].join("\n");
 }
 
@@ -97,7 +98,7 @@ async function handleBind(message, env) {
     });
 
     await deleteMessage(env, chatId, message.message_id);
-    await sendMessage(env, chatId, "绑定成功，Token 已加密保存。后续将自动签到。\n可发送 /test 立即测试。\n如需更新，请再次发送 /bind <token>");
+    await sendMessage(env, chatId, "绑定成功，Token 已加密保存。\n默认每日北京时间 0:00 自动签到一次（需启用 Cron）。\n可发送 /test 立即测试。\n如需更新，请再次发送 /bind <token>");
   } catch (error) {
     await sendMessage(env, chatId, `绑定失败：${error.message || "Token 无效或服务暂不可用"}`);
   }
@@ -159,3 +160,4 @@ export async function onRequestPost(context) {
 
   return new Response("ok", { status: 200 });
 }
+

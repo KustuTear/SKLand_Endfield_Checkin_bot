@@ -16,4 +16,5 @@ SKLAND_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/api/v1/game/attendance"
 SKLAND_GAME_ID = "endfield"
 
 [triggers]
-crons = ["0 2 * * *"]
+crons = ["0 16 * * *"] # Beijing 00:00 (UTC+8)
+
