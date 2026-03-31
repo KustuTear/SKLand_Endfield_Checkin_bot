@@ -29,3 +29,83 @@
 * **`TG_CHAT_ID`**
     * **说明**：接收签到通知的 Telegram 用户 ID 或群组 ID。
     * **注意**：这是一串纯数字 ID，**不是**以 `@` 开头的用户名。你可以通过向 `@userinfobot` 发送消息来获取你自己的数字 ID。
+
+## Cloudflare Pages Functions 版（Telegram Webhook + KV 状态机）
+
+本仓库新增了基于 Cloudflare 的 JS 版本实现：
+
+- `functions/webhook.js`：Telegram Webhook 入口，处理 `/bind <森空岛token>` 绑定与 `/test` 手动签到。`/start` 会提示默认每日北京时间 0 点自动签到。
+- `src/crypto.js`：使用 Web Crypto API（AES-GCM）加解密用户凭据。
+- `src/skland_api.js`：封装森空岛/鹰角接口调用。
+- `src/cron.js`：定时签到逻辑（遍历 `user:*`，解密后签到，失败通知用户）。
+- `functions/cron.js`：可选的 HTTP 手动触发入口（用 `x-cron-secret` 鉴权）。
+- `worker-cron.js`：独立 Worker 的 Cron 入口（用于 `scheduled` 事件）。
+
+### 必要环境变量
+
+- `TG_BOT_TOKEN`：Telegram Bot Token
+- `ENCRYPTION_KEY`：用于 AES-GCM 加密的主密钥（建议 32+ 长度随机字符串）
+- `CRON_SECRET`：仅用于 `functions/cron.js` 手动触发鉴权
+
+可选接口覆盖变量：
+
+- `SKLAND_REFRESH_ENDPOINT`
+- `SKLAND_ATTENDANCE_ENDPOINT`
+- `SKLAND_GAME_ID`
+
+### KV 绑定（重点）
+
+创建 Cloudflare KV 命名空间后，绑定名必须是：`SKLAND_STORAGE`。
+
+#### Pages 项目中绑定
+
+在 Pages 项目设置中：
+1. Settings -> Functions -> KV namespace bindings
+2. 添加 `Binding name = SKLAND_STORAGE`
+3. 选择你创建的 KV 命名空间
+
+#### Worker（Cron）中绑定
+
+可参考 `wrangler.toml.example`：
+
+```toml
+[[kv_namespaces]]
+binding = "SKLAND_STORAGE"
+id = "<YOUR_KV_NAMESPACE_ID>"
+```
+
+### Telegram Webhook 配置
+
+部署 Pages 后，将 webhook 指向：
+
+`https://<your-pages-domain>/webhook`
+
+示例：
+
+```bash
+curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<your-pages-domain>/webhook"
+```
+
+### 绑定与数据键说明
+
+- 用户按如下流程获取 token 并绑定：
+  - 登录 https://www.skland.com/
+  - 打开 https://web-api.skland.com/account/info/hg
+  - 复制返回 JSON 的 `content` 字段完整字符串
+  - 在 Bot 私聊发送 `/bind <content字符串>`
+- 用户凭据（加密存储）：
+  - `user:{tg_user_id}` -> AES-GCM 加密后的 JSON（`cred`, `uid`, `token`）
+
+### 定时签到部署建议
+
+Pages 主要负责 webhook；Cron 建议使用独立 Worker（`worker-cron.js`）并配置 `triggers.crons`。默认建议：`0 16 * * *`（UTC，对应北京时间 0:00）。
+
+也可先用 `functions/cron.js` 通过 HTTP 手动触发联调：
+
+```bash
+curl -X POST "https://<your-pages-domain>/cron" -H "x-cron-secret: <CRON_SECRET>"
+```
+
+
+
+
