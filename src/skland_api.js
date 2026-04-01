@@ -1,12 +1,26 @@
-import { createClient, STORAGE_DID_KEY } from "skland-kit";
+import {
+  createClient,
+  STORAGE_CREDENTIAL_KEY,
+  STORAGE_DID_KEY,
+  STORAGE_OAUTH_TOKEN_KEY
+} from "skland-kit";
+import { createHash, createHmac } from "node:crypto";
 
 const DEFAULT_APP_CODE = "4ca99fa6b56cc2ba";
 const DID_KV_KEY = "meta:skland_did";
+const BINDING_ENDPOINT = "https://zonai.skland.com/api/v1/game/player/binding";
+const ARKNIGHTS_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/api/v1/game/attendance";
+const ENDFIELD_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/web/v1/game/endfield/attendance";
+const USER_AGENT = "Mozilla/5.0 (Linux; Android 12; SM-A5560 Build/V417IR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36; SKLand/1.52.1";
 
 function normalizeDid(raw) {
   const value = String(raw || "").trim();
   if (!value) return "";
   return value.startsWith("B") ? value : `B${value}`;
+}
+
+function md5Hex(input) {
+  return createHash("md5").update(input).digest("hex");
 }
 
 function extractErrorDetail(error) {
@@ -25,6 +39,95 @@ function extractErrorDetail(error) {
     return `${baseMessage} (code=${causeCode})`;
   }
   return baseMessage;
+}
+
+async function hmacSha256Hex(key, data) {
+  return createHmac("sha256", key).update(data).digest("hex");
+}
+
+function getBaseHeaders(dId, extra = {}) {
+  const headers = {
+    "User-Agent": USER_AGENT,
+    "Accept-Encoding": "gzip",
+    Connection: "close",
+    "X-Requested-With": "com.hypergryph.skland",
+    dId,
+    ...extra
+  };
+
+  for (const [key, value] of Object.entries(headers)) {
+    if (value === undefined || value === null || value === "") {
+      delete headers[key];
+    }
+  }
+
+  return headers;
+}
+
+async function requestJson(method, url, headers, body, fallbackMessage) {
+  const response = await fetch(url, {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body)
+  });
+
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new Error(fallbackMessage);
+  }
+
+  const code = data?.code ?? data?.status;
+  const ok = response.ok && (code === undefined || code === 0);
+  if (!ok) {
+    const message = data?.message || data?.msg || data?.error || fallbackMessage;
+    const error = new Error(code !== undefined ? `${message} (code=${code})` : message);
+    error.code = code;
+    error.cause = data;
+    throw error;
+  }
+
+  return data;
+}
+
+async function getSession(client) {
+  const token = await client.storage.getItem(STORAGE_OAUTH_TOKEN_KEY);
+  const cred = await client.storage.getItem(STORAGE_CREDENTIAL_KEY);
+  const dId = normalizeDid(await client.storage.getItem(STORAGE_DID_KEY));
+  if (!token || !cred || !dId) {
+    throw new Error("会话缺失：未获取到 token/cred/dId");
+  }
+  return { token: String(token), cred: String(cred), dId };
+}
+
+async function buildSignedHeaders(url, method, bodyOrQuery, session) {
+  const parsed = new URL(url);
+  const signInput = method === "GET" ? parsed.search.slice(1) : (bodyOrQuery || "");
+  const headerCa = {
+    platform: "3",
+    timestamp: String(Math.floor(Date.now() / 1000)),
+    dId: session.dId,
+    vName: "1.0.0"
+  };
+  const source = `${parsed.pathname}${signInput}${headerCa.timestamp}${JSON.stringify(headerCa)}`;
+  const hmacHex = await hmacSha256Hex(session.token, source);
+  const sign = md5Hex(hmacHex);
+
+  return getBaseHeaders(session.dId, {
+    cred: session.cred,
+    sign,
+    platform: headerCa.platform,
+    timestamp: headerCa.timestamp,
+    vName: headerCa.vName
+  });
+}
+
+async function getBindingViaSignedRequest(client, env) {
+  const session = await getSession(client);
+  const url = env?.SKLAND_BINDING_ENDPOINT || BINDING_ENDPOINT;
+  const headers = await buildSignedHeaders(url, "GET", "", session);
+  return requestJson("GET", url, headers, undefined, "获取绑定列表失败");
 }
 
 function isAlreadySignedMessage(message) {
@@ -81,7 +184,7 @@ function parseEndfieldRewards(data) {
 }
 
 function normalizeBindings(bindingResponse) {
-  const list = bindingResponse?.list;
+  const list = bindingResponse?.data?.list || bindingResponse?.list;
   if (!Array.isArray(list)) return [];
 
   const bindings = [];
@@ -153,7 +256,7 @@ async function createSignedInClient(bindToken, env) {
 
 async function getBindingsByToken(bindToken, env) {
   const client = await createSignedInClient(bindToken, env);
-  const data = await client.collections.player.getBinding();
+  const data = await getBindingViaSignedRequest(client, env);
   const bindings = normalizeBindings(data);
   if (bindings.length === 0) {
     throw new Error("未找到可签到的游戏绑定");
@@ -161,22 +264,16 @@ async function getBindingsByToken(bindToken, env) {
   return { client, bindings };
 }
 
-async function signArknights(client, binding) {
-  const query = { uid: binding.uid, gameId: binding.gameId };
+async function signArknights(client, binding, env) {
+  const session = await getSession(client);
+  const url = env?.SKLAND_ARKNIGHTS_ATTENDANCE_ENDPOINT || ARKNIGHTS_ATTENDANCE_ENDPOINT;
+  const payload = { uid: binding.uid, gameId: binding.gameId };
+  const bodyText = JSON.stringify(payload);
+  const headers = await buildSignedHeaders(url, "POST", bodyText, session);
+  headers["Content-Type"] = "application/json";
 
   try {
-    const status = await client.collections.game.getAttendanceStatus(query);
-    if (isTodayAttended(status)) {
-      return buildResult({
-        status: "already",
-        game: "明日方舟",
-        nickname: binding.nickname,
-        channel: binding.channelName,
-        error: "今日已签到"
-      });
-    }
-
-    const data = await client.collections.game.attendance(query);
+    const data = await requestJson("POST", url, headers, payload, "明日方舟签到失败");
     return buildResult({
       status: "success",
       game: "明日方舟",
@@ -207,6 +304,8 @@ async function signArknights(client, binding) {
 }
 
 async function signEndfield(client, binding) {
+  const session = await getSession(client);
+  const url = ENDFIELD_ATTENDANCE_ENDPOINT;
   const roles = Array.isArray(binding.roles) ? binding.roles : [];
   if (roles.length === 0) {
     return [buildResult({
@@ -235,21 +334,14 @@ async function signEndfield(client, binding) {
       continue;
     }
 
-    const query = { gameId: binding.gameId, roleId, serverId };
-    try {
-      const status = await client.collections.game.getAttendanceStatus(query);
-      if (isTodayAttended(status)) {
-        results.push(buildResult({
-          status: "already",
-          game: "终末地",
-          nickname: roleNickname,
-          channel: binding.channelName,
-          error: "今日已签到"
-        }));
-        continue;
-      }
+    const headers = await buildSignedHeaders(url, "POST", "", session);
+    headers["Content-Type"] = "application/json";
+    headers["sk-game-role"] = `3_${roleId}_${serverId}`;
+    headers.referer = "https://game.skland.com/";
+    headers.origin = "https://game.skland.com/";
 
-      const data = await client.collections.game.attendance(query);
+    try {
+      const data = await requestJson("POST", url, headers, undefined, "终末地签到失败");
       results.push(buildResult({
         status: "success",
         game: "终末地",
@@ -305,9 +397,9 @@ export async function runSignInForToken(bindToken, env) {
 
     for (const binding of bindings) {
       if (binding.appCode === "arknights") {
-        results.push(await signArknights(client, binding));
+        results.push(await signArknights(client, binding, env));
       } else if (binding.appCode === "endfield") {
-        results.push(...await signEndfield(client, binding));
+        results.push(...await signEndfield(client, binding, env));
       }
     }
 
