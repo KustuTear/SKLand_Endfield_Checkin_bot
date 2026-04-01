@@ -39,5 +39,5 @@ curl "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=https://<your-
 
 ## 备注
 
-- `/start` 中的 token 获取说明参考森空岛网页 `https://web-api.skland.com/account/info/hg` 的 `content` 字段。
+- 登录 森空岛网页版 后，打开 https://web-api.skland.com/account/info/hg 记下 content 字段的值。
 - 自动签到 cron `0 16 * * *` 为 UTC 时间，对应北京时间每天 00:00。
