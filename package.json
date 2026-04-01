@@ -4,5 +4,8 @@
   "type": "module",
   "devDependencies": {
     "wrangler": "^4.79.0"
+  },
+  "dependencies": {
+    "skland-kit": "^0.3.4"
   }
 }
