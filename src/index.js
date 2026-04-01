@@ -39,20 +39,17 @@ function maskToken(token) {
 
 function buildStartMessage() {
   return [
-    "欢迎使用森空岛签到 Bot。",
+    "使用步骤：",
+    "1. 登录森空岛网页端 https://www.skland.com/。",
+    "2. 打开 https://web-api.skland.com/account/info/hg 。",
+    "3. 复制返回 JSON 中 content 字段的完整字符串。",
+    "4. 发送 /bind <token> 完成绑定。",
+    "注：每日00:00会自动签到一次",
     "",
     "可用命令：",
-    "/bind <token1,token2> 绑定一个或多个 token，多个 token 用英文逗号分隔",
+    "/bind 绑定一个或多个 token，多个 token 用英文逗号分隔",
     "/test 立即测试当前 Telegram 账号已绑定 token 的签到",
-    "/clear 清空当前 Telegram 账号已保存的全部 token",
-    "",
-    "使用步骤：",
-    "1. 登录森空岛网页版 后，打开 https://web-api.skland.com/account/info/hg 记下 content 字段的值。",
-    "2. 发送 /bind <token> 完成绑定。",
-    "",
-    "说明：",
-    "- /test 和 /clear 只会操作你自己的 Telegram 账号记录。",
-    "- 每天北京时间 00:00 会自动执行一次签到。"
+    "/clear 清空当前 Telegram 账号已保存的全部 token。"
   ].join("\n");
 }
 
