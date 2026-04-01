@@ -5,20 +5,57 @@ const ARKNIGHTS_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/api/v1/game/atte
 const ENDFIELD_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/web/v1/game/endfield/attendance";
 const DEFAULT_APP_CODE = "4ca99fa6b56cc2ba";
 const USER_AGENT = "Mozilla/5.0 (Linux; Android 12; SM-A5560 Build/V417IR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36; SKLand/1.52.1";
+const DID_KV_KEY = "meta:skland_did";
 
 const encoder = new TextEncoder();
+let cachedDid = "";
 
 function randomHex(length) {
   const bytes = crypto.getRandomValues(new Uint8Array(Math.ceil(length / 2)));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("").slice(0, length);
 }
 
-function resolveDid(env) {
-  const configured = String(env.SKLAND_DID || "").trim();
+function normalizeDid(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+  return value.startsWith("B") ? value : `B${value}`;
+}
+
+async function resolveDid(env) {
+  const configured = normalizeDid(env.SKLAND_DID);
   if (configured) {
-    return configured.startsWith("B") ? configured : `B${configured}`;
+    cachedDid = configured;
+    return configured;
   }
-  return `B${randomHex(32)}`;
+
+  if (cachedDid) {
+    return cachedDid;
+  }
+
+  if (env?.SKLAND_STORAGE) {
+    try {
+      const stored = normalizeDid(await env.SKLAND_STORAGE.get(DID_KV_KEY));
+      if (stored) {
+        cachedDid = stored;
+        return stored;
+      }
+    } catch {
+      // ignore kv read error and fallback to generated did
+    }
+  }
+
+  const generated = `B${randomHex(32)}`;
+  cachedDid = generated;
+
+  if (env?.SKLAND_STORAGE) {
+    try {
+      await env.SKLAND_STORAGE.put(DID_KV_KEY, generated);
+    } catch {
+      // ignore kv write error and keep runtime cache
+    }
+  }
+
+  return generated;
 }
 
 function getBaseHeaders(dId, extra = {}) {
@@ -117,7 +154,14 @@ async function sleep(ms) {
 }
 
 function parseResponseError(body, fallback) {
-  return body?.message || body?.msg || body?.error || fallback;
+  const message = body?.message || body?.msg || body?.error || "";
+  const code = body?.code ?? body?.status;
+  if (message && code !== undefined && code !== null) {
+    return `${message} (code=${code})`;
+  }
+  if (message) return message;
+  if (code !== undefined && code !== null) return `${fallback} (code=${code})`;
+  return fallback;
 }
 
 async function readJsonStrict(response, fallbackError) {
@@ -271,7 +315,7 @@ function buildResult({ status, game, nickname, channel, awards = [], error = "" 
 }
 
 export async function exchangeUserTokenForCredential(userToken, env) {
-  const dId = resolveDid(env);
+  const dId = await resolveDid(env);
 
   const grantBody = await requestJson(
     "POST",
@@ -311,7 +355,7 @@ export async function exchangeUserTokenForCredential(userToken, env) {
 }
 
 export async function getBindingList(credential, env) {
-  const dId = credential.dId || resolveDid(env);
+  const dId = credential.dId || await resolveDid(env);
   const url = env.SKLAND_BINDING_ENDPOINT || BINDING_ENDPOINT;
   const headers = await buildSignedHeaders(url, "GET", "", credential, dId);
   const body = await requestJson("GET", url, headers, undefined, "获取绑定列表失败");
@@ -325,7 +369,7 @@ export async function getBindingList(credential, env) {
 }
 
 async function signArknights(credential, binding, env) {
-  const dId = credential.dId || resolveDid(env);
+  const dId = credential.dId || await resolveDid(env);
   const url = env.SKLAND_ARKNIGHTS_ATTENDANCE_ENDPOINT || ARKNIGHTS_ATTENDANCE_ENDPOINT;
   const payload = { gameId: binding.gameId, uid: binding.uid };
   const bodyText = JSON.stringify(payload);
@@ -362,7 +406,7 @@ async function signArknights(credential, binding, env) {
 }
 
 async function signEndfield(credential, binding, env) {
-  const dId = credential.dId || resolveDid(env);
+  const dId = credential.dId || await resolveDid(env);
   const url = env.SKLAND_ENDFIELD_ATTENDANCE_ENDPOINT || ENDFIELD_ATTENDANCE_ENDPOINT;
   const roles = Array.isArray(binding.roles) ? binding.roles : [];
 

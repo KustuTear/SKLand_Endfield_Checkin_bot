@@ -1,5 +1,8 @@
 {
   "name": "skland-endfield-checkin-bot",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "wrangler": "^4.79.0"
+  }
 }
