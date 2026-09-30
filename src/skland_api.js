@@ -11,6 +11,7 @@ const DID_KV_KEY = "meta:skland_did";
 const BINDING_ENDPOINT = "https://zonai.skland.com/api/v1/game/player/binding";
 const ARKNIGHTS_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/api/v1/game/attendance";
 const ENDFIELD_ATTENDANCE_ENDPOINT = "https://zonai.skland.com/web/v1/game/endfield/attendance";
+const GENERATE_CRED_PATH = "/web/v1/user/auth/generate_cred_by_code";
 const USER_AGENT = "Mozilla/5.0 (Linux; Android 12; SM-A5560 Build/V417IR; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/101.0.4951.61 Safari/537.36; SKLand/1.52.1";
 
 function normalizeDid(raw) {
@@ -238,20 +239,151 @@ async function persistDid(client, env) {
   await env.SKLAND_STORAGE.put(DID_KV_KEY, did);
 }
 
-async function createSignedInClient(bindToken, env) {
-  const client = createClient();
-  await hydrateDid(client, env);
+// skland-kit 的 getDid() 只把生成的 dId 用在登录请求头里、不写回 storage，
+// 所以 persistDid() 永远读不到值、getSession() 永远报“会话缺失”。
+// 这里在登录请求上做两件事：
+//   1. 把真实 dId 捞出来落库；
+//   2. 记录登录响应体，好在失败时给出可读原因（例如“设备信息无效”）。
+const didCaptureSinks = new Set();
+let didCaptureInstalled = false;
 
-  const appCode = env?.SKLAND_APP_CODE || DEFAULT_APP_CODE;
-  const grantData = await client.collections.hypergryph.grantAuthorizeCode(bindToken, { appCode, type: 0 });
-  const code = grantData?.code;
-  if (!code) {
-    throw new Error("获取授权码失败：未返回 code");
+async function readJsonBody(response) {
+  try {
+    return await response.clone().json();
+  } catch {
+    return null;
+  }
+}
+
+function installDidCapture() {
+  if (didCaptureInstalled || typeof globalThis.fetch !== "function") {
+    return;
   }
 
-  await client.signIn(code);
-  await persistDid(client, env);
-  return client;
+  const originalFetch = globalThis.fetch;
+  const captureFetch = async function (input, init) {
+    const response = await originalFetch(input, init);
+
+    if (didCaptureSinks.size > 0) {
+      try {
+        const url = typeof input === "string" ? input : (input?.url ?? "");
+        if (typeof url === "string" && url.includes(GENERATE_CRED_PATH)) {
+          const rawHeaders = init?.headers ?? (input && typeof input === "object" ? input.headers : undefined);
+          const did = normalizeDid(rawHeaders ? new Headers(rawHeaders).get("dId") : "");
+          const body = await readJsonBody(response);
+          if (did || body) {
+            for (const sink of didCaptureSinks) {
+              sink({ did, body });
+            }
+          }
+        }
+      } catch {
+        // 捕获失败不能影响正常请求
+      }
+    }
+
+    return response;
+  };
+
+  try {
+    globalThis.fetch = captureFetch;
+  } catch {
+    return; // 运行时不支持改写 fetch，保持原样（后续会以“会话缺失”暴露）
+  }
+
+  didCaptureInstalled = true;
+}
+
+async function signInAndCaptureDid(client, code) {
+  installDidCapture();
+
+  let capturedDid = "";
+  let responseBody = null;
+  const sink = (info) => {
+    if (info.did && !capturedDid) {
+      capturedDid = info.did;
+    }
+    if (info.body) {
+      responseBody = info.body;
+    }
+  };
+  didCaptureSinks.add(sink);
+
+  try {
+    await client.signIn(code);
+  } catch (error) {
+    // skland-kit 登录失败时会丢出 “Cannot read properties of undefined (reading 'token')”
+    // 之类的天书，这里换成服务端返回的真实原因。
+    const serverMessage = responseBody?.message || responseBody?.msg || responseBody?.error;
+    if (!serverMessage) {
+      throw error;
+    }
+
+    const wrapped = new Error(String(serverMessage));
+    wrapped.code = responseBody?.code;
+    wrapped.cause = responseBody;
+    throw wrapped;
+  } finally {
+    didCaptureSinks.delete(sink);
+  }
+
+  if (capturedDid) {
+    await client.storage.setItem(STORAGE_DID_KEY, capturedDid);
+  }
+
+  return capturedDid;
+}
+
+async function clearStoredDid(env) {
+  if (!env?.SKLAND_STORAGE) return;
+  await env.SKLAND_STORAGE.delete(DID_KV_KEY);
+}
+
+async function attemptSignIn(bindToken, env, { ignoreConfiguredDid = false } = {}) {
+  const effectiveEnv = ignoreConfiguredDid ? { ...env, SKLAND_DID: "" } : env;
+  const client = createClient();
+  const usedCachedDid = Boolean(await hydrateDid(client, effectiveEnv));
+  let stage = "grant";
+
+  try {
+    const appCode = effectiveEnv?.SKLAND_APP_CODE || DEFAULT_APP_CODE;
+    const grantData = await client.collections.hypergryph.grantAuthorizeCode(bindToken, { appCode, type: 0 });
+    const code = grantData?.code;
+    if (!code) {
+      throw new Error("获取授权码失败：未返回 code");
+    }
+
+    // 走到这一步说明 token 本身没问题，剩余失败才可能与 dId 有关
+    stage = "signin";
+    await signInAndCaptureDid(client, code);
+    await persistDid(client, effectiveEnv);
+    return { client, usedCachedDid, stage, error: null };
+  } catch (error) {
+    return { client: null, usedCachedDid, stage, error };
+  }
+}
+
+async function createSignedInClient(bindToken, env) {
+  // 必须在 createClient 之前安装：ofetch 会在创建实例时捕获当时的 globalThis.fetch
+  installDidCapture();
+
+  const first = await attemptSignIn(bindToken, env);
+  if (first.client) {
+    return first.client;
+  }
+  // 只有在“token 有效、但登录被拒”时才怀疑缓存的 dId 失效（服务端回“设备信息无效”），
+  // 清掉 KV 缓存并忽略 SKLAND_DID，让 skland-kit 重新生成一个真实 dId 后再试一次。
+  if (!first.usedCachedDid || first.stage !== "signin") {
+    throw first.error;
+  }
+
+  await clearStoredDid(env);
+  const second = await attemptSignIn(bindToken, env, { ignoreConfiguredDid: true });
+  if (second.client) {
+    return second.client;
+  }
+
+  throw second.error;
 }
 
 async function getBindingsByToken(bindToken, env) {
@@ -303,9 +435,9 @@ async function signArknights(client, binding, env) {
   }
 }
 
-async function signEndfield(client, binding) {
+async function signEndfield(client, binding, env) {
   const session = await getSession(client);
-  const url = ENDFIELD_ATTENDANCE_ENDPOINT;
+  const url = env?.SKLAND_ENDFIELD_ATTENDANCE_ENDPOINT || ENDFIELD_ATTENDANCE_ENDPOINT;
   const roles = Array.isArray(binding.roles) ? binding.roles : [];
   if (roles.length === 0) {
     return [buildResult({
